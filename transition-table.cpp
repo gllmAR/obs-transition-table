@@ -1191,7 +1191,7 @@ void TransitionTableDialog::ShowMatrix()
 	const auto w = new QTableWidget(s, s);
 	w->setSelectionMode(QAbstractItemView::NoSelection);
 	w->horizontalHeader()->setDefaultSectionSize(150);
-	w->verticalHeader()->setDefaultSectionSize(32);
+	w->verticalHeader()->setDefaultSectionSize(58);
 	w->horizontalHeader()->setMinimumSectionSize(80);
 	w->verticalHeader()->setMinimumSectionSize(28);
 	w->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
@@ -1224,7 +1224,11 @@ void TransitionTableDialog::ShowMatrix()
 			const string mCanvas = canvasName.toUtf8().constData();
 			const string mFrom = from;
 			const string mTo = to;
-			const int mDur = existingDur;
+
+			auto *cellWidget = new QWidget;
+			auto *cellLayout = new QVBoxLayout(cellWidget);
+			cellLayout->setContentsMargins(2, 2, 2, 2);
+			cellLayout->setSpacing(2);
 
 			auto *cellCombo = new QComboBox;
 			cellCombo->addItem("");
@@ -1235,9 +1239,19 @@ void TransitionTableDialog::ShowMatrix()
 			}
 			if (!t.empty())
 				cellCombo->setCurrentText(QString::fromUtf8(t.c_str()));
+			cellLayout->addWidget(cellCombo);
+
+			auto *cellDurSpin = new QSpinBox;
+			cellDurSpin->setMinimum(50);
+			cellDurSpin->setMaximum(20000);
+			cellDurSpin->setSingleStep(50);
+			cellDurSpin->setSuffix("ms");
+			cellDurSpin->setValue(existingDur > 0 ? existingDur : durationSpin->value());
+			cellDurSpin->setEnabled(!t.empty());
+			cellLayout->addWidget(cellDurSpin);
 
 			connect(cellCombo, &QComboBox::currentTextChanged,
-				[this, mCanvas, mFrom, mTo, mDur](const QString &val) {
+				[this, cellDurSpin, mCanvas, mFrom, mTo](const QString &val) {
 					if (val.isEmpty()) {
 						auto ci = transition_table.find(mCanvas);
 						if (ci != transition_table.end()) {
@@ -1245,11 +1259,12 @@ void TransitionTableDialog::ShowMatrix()
 							if (fi != ci->second.end())
 								fi->second.erase(mTo);
 						}
+						cellDurSpin->setEnabled(false);
 					} else {
 						auto &info = transition_table[mCanvas][mFrom][mTo];
 						info.transition = val.toUtf8().constData();
-						if (info.duration == 0)
-							info.duration = mDur > 0 ? mDur : durationSpin->value();
+						info.duration = cellDurSpin->value();
+						cellDurSpin->setEnabled(true);
 					}
 					if (!transition_table_enabled)
 						return;
@@ -1259,8 +1274,28 @@ void TransitionTableDialog::ShowMatrix()
 						obs_canvas_release(c);
 					}
 				});
+			connect(cellDurSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+				[mCanvas, mFrom, mTo](int val) {
+					auto ci = transition_table.find(mCanvas);
+					if (ci == transition_table.end())
+						return;
+					auto fi = ci->second.find(mFrom);
+					if (fi == ci->second.end())
+						return;
+					auto ti = fi->second.find(mTo);
+					if (ti == fi->second.end())
+						return;
+					ti->second.duration = val;
+					if (!transition_table_enabled)
+						return;
+					obs_canvas_t *c = obs_get_canvas_by_name(mCanvas.c_str());
+					if (c) {
+						set_transition_overrides(c);
+						obs_canvas_release(c);
+					}
+				});
 
-			w->setCellWidget(row, column, cellCombo);
+			w->setCellWidget(row, column, cellWidget);
 			column++;
 		}
 		row++;
