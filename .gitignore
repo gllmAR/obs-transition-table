@@ -11,3 +11,8 @@
 # ignore generated files
 *.generated.*
 **/.Brewfile.lock.json
+
+# build dependencies and generated headers
+/.deps/
+/cmake/.CMakeBuildNumber
+/version.h
