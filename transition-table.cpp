@@ -9,6 +9,7 @@
 #include <QCompleter>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMouseEvent>
@@ -1186,111 +1187,85 @@ void TransitionTableDialog::ShowMatrix()
 	scenes.unique();
 	scenes.push_front("Any");
 	const int s = (int)scenes.size();
+
 	const auto w = new QTableWidget(s, s);
+	w->setSelectionMode(QAbstractItemView::NoSelection);
+	w->horizontalHeader()->setDefaultSectionSize(150);
+	w->verticalHeader()->setDefaultSectionSize(32);
+	w->horizontalHeader()->setMinimumSectionSize(80);
+	w->verticalHeader()->setMinimumSectionSize(28);
+	w->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+	w->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+
 	int i = 0;
 	for (const auto &it : scenes) {
-		w->setHorizontalHeaderItem(
-			i, new QTableWidgetItem(QString::fromUtf8(it == "Any" ? obs_module_text("Any") : it.c_str()),
-						QTableWidgetItem::ItemType::Type));
-		w->setVerticalHeaderItem(i,
-					 new QTableWidgetItem(QString::fromUtf8(it == "Any" ? obs_module_text("Any") : it.c_str()),
-							      QTableWidgetItem::ItemType::Type));
+		const QString label = QString::fromUtf8(it == "Any" ? obs_module_text("Any") : it.c_str());
+		w->setHorizontalHeaderItem(i, new QTableWidgetItem(label, QTableWidgetItem::ItemType::Type));
+		w->setVerticalHeaderItem(i, new QTableWidgetItem(label, QTableWidgetItem::ItemType::Type));
 		i++;
 	}
+
 	int row = 0;
-	if (canvas_it != transition_table.end()) {
-		for (const auto &it : scenes) {
-			auto f1 = canvas_it->second.find(it);
-			int column = 0;
-			for (const auto &it2 : scenes) {
-				string t;
-				int cellDur = 0;
+	for (const auto &from : scenes) {
+		int column = 0;
+		for (const auto &to : scenes) {
+			string t;
+			int existingDur = 0;
+			if (canvas_it != transition_table.end()) {
+				auto f1 = canvas_it->second.find(from);
 				if (f1 != canvas_it->second.end()) {
-					auto f2 = f1->second.find(it2);
+					auto f2 = f1->second.find(to);
 					if (f2 != f1->second.end()) {
 						t = f2->second.transition;
-						cellDur = f2->second.duration;
+						existingDur = f2->second.duration;
 					}
 				}
-				const string mCanvas = canvasName.toUtf8().constData();
-				const string mFrom = it;
-				const string mTo = it2;
-
-				auto *cellWidget = new QWidget;
-				auto *cellLayout = new QVBoxLayout(cellWidget);
-				cellLayout->setContentsMargins(2, 2, 2, 2);
-				cellLayout->setSpacing(2);
-
-				auto *cellTransCombo = new QComboBox;
-				cellTransCombo->addItem("");
-				auto cellTransIt = canvas_transitions.find(mCanvas);
-				if (cellTransIt != canvas_transitions.end()) {
-					for (const auto &trans : cellTransIt->second)
-						cellTransCombo->addItem(QString::fromUtf8(trans.c_str()));
-				}
-				if (!t.empty())
-					cellTransCombo->setCurrentText(QString::fromUtf8(t.c_str()));
-				cellLayout->addWidget(cellTransCombo);
-
-				auto *cellDurSpin = new QSpinBox;
-				cellDurSpin->setMinimum(50);
-				cellDurSpin->setMaximum(20000);
-				cellDurSpin->setSingleStep(50);
-				cellDurSpin->setSuffix("ms");
-				cellDurSpin->setValue(cellDur > 0 ? cellDur : 300);
-				cellDurSpin->setEnabled(!t.empty());
-				cellLayout->addWidget(cellDurSpin);
-
-				connect(cellTransCombo, &QComboBox::currentTextChanged,
-					[cellDurSpin, mCanvas, mFrom, mTo](const QString &val) {
-						if (val.isEmpty()) {
-							auto ci = transition_table.find(mCanvas);
-							if (ci != transition_table.end()) {
-								auto fi = ci->second.find(mFrom);
-								if (fi != ci->second.end())
-									fi->second.erase(mTo);
-							}
-							cellDurSpin->setEnabled(false);
-						} else {
-							transition_table[mCanvas][mFrom][mTo].transition =
-								val.toUtf8().constData();
-							cellDurSpin->setEnabled(true);
-						}
-						if (!transition_table_enabled)
-							return;
-						obs_canvas_t *c = obs_get_canvas_by_name(mCanvas.c_str());
-						if (c) {
-							set_transition_overrides(c);
-							obs_canvas_release(c);
-						}
-					});
-				connect(cellDurSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-					[mCanvas, mFrom, mTo](int val) {
-						auto ci = transition_table.find(mCanvas);
-						if (ci == transition_table.end())
-							return;
-						auto fi = ci->second.find(mFrom);
-						if (fi == ci->second.end())
-							return;
-						auto ti = fi->second.find(mTo);
-						if (ti == fi->second.end())
-							return;
-						ti->second.duration = val;
-						if (!transition_table_enabled)
-							return;
-						obs_canvas_t *c = obs_get_canvas_by_name(mCanvas.c_str());
-						if (c) {
-							set_transition_overrides(c);
-							obs_canvas_release(c);
-						}
-					});
-
-				w->setCellWidget(row, column, cellWidget);
-				column++;
 			}
-			row++;
+			const string mCanvas = canvasName.toUtf8().constData();
+			const string mFrom = from;
+			const string mTo = to;
+			const int mDur = existingDur;
+
+			auto *cellCombo = new QComboBox;
+			cellCombo->addItem("");
+			auto cellTransIt = canvas_transitions.find(mCanvas);
+			if (cellTransIt != canvas_transitions.end()) {
+				for (const auto &trans : cellTransIt->second)
+					cellCombo->addItem(QString::fromUtf8(trans.c_str()));
+			}
+			if (!t.empty())
+				cellCombo->setCurrentText(QString::fromUtf8(t.c_str()));
+
+			connect(cellCombo, &QComboBox::currentTextChanged,
+				[this, mCanvas, mFrom, mTo, mDur](const QString &val) {
+					if (val.isEmpty()) {
+						auto ci = transition_table.find(mCanvas);
+						if (ci != transition_table.end()) {
+							auto fi = ci->second.find(mFrom);
+							if (fi != ci->second.end())
+								fi->second.erase(mTo);
+						}
+					} else {
+						auto &info = transition_table[mCanvas][mFrom][mTo];
+						info.transition = val.toUtf8().constData();
+						if (info.duration == 0)
+							info.duration = mDur > 0 ? mDur : durationSpin->value();
+					}
+					if (!transition_table_enabled)
+						return;
+					obs_canvas_t *c = obs_get_canvas_by_name(mCanvas.c_str());
+					if (c) {
+						set_transition_overrides(c);
+						obs_canvas_release(c);
+					}
+				});
+
+			w->setCellWidget(row, column, cellCombo);
+			column++;
 		}
+		row++;
 	}
+
 	const auto m = new QVBoxLayout;
 	m->addWidget(w);
 
@@ -1305,6 +1280,7 @@ void TransitionTableDialog::ShowMatrix()
 	bottomLayout->addWidget(closeButton, 0, Qt::AlignRight);
 	m->addLayout(bottomLayout);
 	md->setLayout(m);
+	md->setMinimumSize(500, 400);
 	md->exec();
 	RefreshTable();
 }
