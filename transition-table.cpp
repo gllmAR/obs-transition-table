@@ -1069,10 +1069,47 @@ void TransitionTableDialog::RefreshTable()
 				}
 			}
 			mainLayout->addWidget(label, row, col++);
-			label = new QLabel(QString::fromUtf8(it2.second.transition.c_str()));
-			mainLayout->addWidget(label, row, col++);
-			label = new QLabel(QString::fromUtf8((to_string(it2.second.duration) + "ms").c_str()));
-			mainLayout->addWidget(label, row, col++, Qt::AlignRight);
+			const string rowCanvas = canvasName.toUtf8().constData();
+			const string rowFrom = it.first;
+			const string rowTo = it2.first;
+			auto *rowTransCombo = new QComboBox;
+			auto rowTransIt = canvas_transitions.find(rowCanvas);
+			if (rowTransIt != canvas_transitions.end()) {
+				for (const auto &t : rowTransIt->second)
+					rowTransCombo->addItem(QString::fromUtf8(t.c_str()));
+			}
+			rowTransCombo->setCurrentText(QString::fromUtf8(it2.second.transition.c_str()));
+			connect(rowTransCombo, &QComboBox::currentTextChanged,
+				[this, rowCanvas, rowFrom, rowTo](const QString &val) {
+					transition_table[rowCanvas][rowFrom][rowTo].transition =
+						val.toUtf8().constData();
+					if (!transition_table_enabled)
+						return;
+					obs_canvas_t *c = obs_get_canvas_by_name(rowCanvas.c_str());
+					if (c) {
+						set_transition_overrides(c);
+						obs_canvas_release(c);
+					}
+				});
+			mainLayout->addWidget(rowTransCombo, row, col++);
+			auto *rowDurSpin = new QSpinBox;
+			rowDurSpin->setMinimum(50);
+			rowDurSpin->setMaximum(20000);
+			rowDurSpin->setSingleStep(50);
+			rowDurSpin->setSuffix("ms");
+			rowDurSpin->setValue(it2.second.duration);
+			connect(rowDurSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+				[this, rowCanvas, rowFrom, rowTo](int val) {
+					transition_table[rowCanvas][rowFrom][rowTo].duration = val;
+					if (!transition_table_enabled)
+						return;
+					obs_canvas_t *c = obs_get_canvas_by_name(rowCanvas.c_str());
+					if (c) {
+						set_transition_overrides(c);
+						obs_canvas_release(c);
+					}
+				});
+			mainLayout->addWidget(rowDurSpin, row, col++);
 			auto *checkBox = new QCheckBox;
 			mainLayout->addWidget(checkBox, row, col++, Qt::AlignCenter);
 			duration = it2.second.duration;
@@ -1121,24 +1158,18 @@ void TransitionTableDialog::mouseDoubleClickEvent(QMouseEvent *event)
 		return;
 	fromCombo->setCurrentText(from);
 	toCombo->setCurrentText(to);
-	// Populate transition and duration so the row can be directly edited
+	// Sync top-bar controls with the clicked row (useful when adding a similar rule)
 	item = mainLayout->itemAtPosition(row, 2);
 	if (item) {
-		auto transLabel = dynamic_cast<QLabel *>(item->widget());
-		if (transLabel)
-			transitionCombo->setCurrentText(transLabel->text());
+		auto *rowTransCombo = dynamic_cast<QComboBox *>(item->widget());
+		if (rowTransCombo)
+			transitionCombo->setCurrentText(rowTransCombo->currentText());
 	}
 	item = mainLayout->itemAtPosition(row, 3);
 	if (item) {
-		auto durLabel = dynamic_cast<QLabel *>(item->widget());
-		if (durLabel) {
-			QString durText = durLabel->text();
-			durText.remove("ms");
-			bool ok;
-			const int dur = durText.toInt(&ok);
-			if (ok && dur >= 50 && dur <= 20000)
-				durationSpin->setValue(dur);
-		}
+		auto *rowDurSpin = dynamic_cast<QSpinBox *>(item->widget());
+		if (rowDurSpin)
+			durationSpin->setValue(rowDurSpin->value());
 	}
 }
 
@@ -1184,13 +1215,20 @@ void TransitionTableDialog::ShowMatrix()
 			int column = 0;
 			for (const auto &it2 : scenes) {
 				string t;
+				int cellDur = 0;
 				if (f1 != canvas_it->second.end()) {
 					auto f2 = f1->second.find(it2);
 					if (f2 != f1->second.end()) {
 						t = f2->second.transition;
+						cellDur = f2->second.duration;
 					}
 				}
-				w->setCellWidget(row, column, new QLabel(QString::fromUtf8(t.c_str())));
+				QString cellText = QString::fromUtf8(t.c_str());
+				if (cellDur > 0)
+					cellText += "\n" + QString::number(cellDur) + "ms";
+				auto *cellLabel = new QLabel(cellText);
+				cellLabel->setAlignment(Qt::AlignCenter);
+				w->setCellWidget(row, column, cellLabel);
 				column++;
 			}
 			row++;
