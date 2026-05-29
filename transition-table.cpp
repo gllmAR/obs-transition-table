@@ -696,16 +696,32 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 		auto canvas = obs_get_canvas_by_name(canvasName.c_str());
 		if (!canvas)
 			return;
-		obs_canvas_enum_scenes(
-			canvas,
-			[](void *param, obs_source_t *scene) {
-				auto ttd = (TransitionTableDialog *)param;
-				string sceneName = obs_source_get_name(scene);
-				ttd->fromCombo->addItem(QString::fromUtf8(sceneName.c_str()), QByteArray(sceneName.c_str()));
-				ttd->toCombo->addItem(QString::fromUtf8(sceneName.c_str()), QByteArray(sceneName.c_str()));
-				return true;
-			},
-			this);
+		// Use obs_frontend_get_scenes for the main canvas to preserve scene list order.
+		// Fall back to obs_canvas_enum_scenes for secondary canvases.
+		obs_canvas_t *mc = obs_get_main_canvas();
+		string mainCanvasName = obs_canvas_get_name(mc);
+		obs_canvas_release(mc);
+		if (canvasName == mainCanvasName) {
+			obs_frontend_source_list scenes = {};
+			obs_frontend_get_scenes(&scenes);
+			for (size_t i = 0; i < scenes.sources.num; i++) {
+				string sceneName = obs_source_get_name(scenes.sources.array[i]);
+				fromCombo->addItem(QString::fromUtf8(sceneName.c_str()), QByteArray(sceneName.c_str()));
+				toCombo->addItem(QString::fromUtf8(sceneName.c_str()), QByteArray(sceneName.c_str()));
+			}
+			obs_frontend_source_list_free(&scenes);
+		} else {
+			obs_canvas_enum_scenes(
+				canvas,
+				[](void *param, obs_source_t *scene) {
+					auto ttd = (TransitionTableDialog *)param;
+					string sceneName = obs_source_get_name(scene);
+					ttd->fromCombo->addItem(QString::fromUtf8(sceneName.c_str()), QByteArray(sceneName.c_str()));
+					ttd->toCombo->addItem(QString::fromUtf8(sceneName.c_str()), QByteArray(sceneName.c_str()));
+					return true;
+				},
+				this);
+		}
 		obs_canvas_release(canvas);
 		RefreshTable();
 	});
