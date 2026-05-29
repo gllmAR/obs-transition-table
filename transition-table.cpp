@@ -10,6 +10,7 @@
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
@@ -658,24 +659,35 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 #endif
 
 	idx = 0;
+	fromFilter = new QLineEdit;
+	fromFilter->setPlaceholderText(QString::fromUtf8(obs_module_text("FromScene")));
+	fromFilter->setClearButtonEnabled(true);
+	mainLayout->addWidget(fromFilter, 1, idx++);
+	toFilter = new QLineEdit;
+	toFilter->setPlaceholderText(QString::fromUtf8(obs_module_text("ToScene")));
+	toFilter->setClearButtonEnabled(true);
+	mainLayout->addWidget(toFilter, 1, idx++);
+
+	connect(fromFilter, &QLineEdit::textChanged, this, &TransitionTableDialog::RefreshTable);
+	connect(toFilter, &QLineEdit::textChanged, this, &TransitionTableDialog::RefreshTable);
+
+	idx = 0;
 	fromCombo = new QComboBox();
 	fromCombo->setEditable(true);
 	auto *completer = fromCombo->completer();
 	completer->setCaseSensitivity(Qt::CaseInsensitive);
 	completer->setFilterMode(Qt::MatchContains);
 	completer->setCompletionMode(QCompleter::PopupCompletion);
-	fromCombo->addItem("", QByteArray(""));
 	fromCombo->addItem(obs_module_text("Any"), QByteArray("Any"));
-	mainLayout->addWidget(fromCombo, 1, idx++);
+	mainLayout->addWidget(fromCombo, 2, idx++);
 	toCombo = new QComboBox();
 	toCombo->setEditable(true);
 	completer = toCombo->completer();
 	completer->setCaseSensitivity(Qt::CaseInsensitive);
 	completer->setFilterMode(Qt::MatchContains);
 	completer->setCompletionMode(QCompleter::PopupCompletion);
-	toCombo->addItem("", QByteArray(""));
 	toCombo->addItem(obs_module_text("Any"), QByteArray("Any"));
-	mainLayout->addWidget(toCombo, 1, idx++);
+	mainLayout->addWidget(toCombo, 2, idx++);
 
 	connect(canvasCombo, &QComboBox::currentTextChanged, [this] {
 		string canvasName = canvasCombo->currentText().toUtf8().constData();
@@ -687,10 +699,8 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 			}
 		}
 		fromCombo->clear();
-		fromCombo->addItem("", QByteArray(""));
 		fromCombo->addItem(obs_module_text("Any"), QByteArray("Any"));
 		toCombo->clear();
-		toCombo->addItem("", QByteArray(""));
 		toCombo->addItem(obs_module_text("Any"), QByteArray("Any"));
 
 		auto canvas = obs_get_canvas_by_name(canvasName.c_str());
@@ -726,22 +736,19 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 		RefreshTable();
 	});
 
-	connect(fromCombo, SIGNAL(editTextChanged(const QString &)), SLOT(RefreshTable()));
-	connect(toCombo, SIGNAL(editTextChanged(const QString &)), SLOT(RefreshTable()));
-
 	transitionCombo = new QComboBox();
 	transitionCombo->setEditable(true);
-	mainLayout->addWidget(transitionCombo, 1, idx++);
+	mainLayout->addWidget(transitionCombo, 2, idx++);
 	durationSpin = new QSpinBox;
 	durationSpin->setMinimum(50);
 	durationSpin->setMaximum(20000);
 	durationSpin->setSingleStep(50);
 	durationSpin->setValue(500);
 	durationSpin->setSuffix("ms");
-	mainLayout->addWidget(durationSpin, 1, idx++);
+	mainLayout->addWidget(durationSpin, 2, idx++);
 	QPushButton *addButton = new QPushButton(obs_module_text("Set"));
 	connect(addButton, &QPushButton::clicked, [this]() { AddClicked(); });
-	mainLayout->addWidget(addButton, 1, idx++, Qt::AlignCenter);
+	mainLayout->addWidget(addButton, 2, idx++, Qt::AlignCenter);
 
 	RefreshTable();
 
@@ -794,7 +801,7 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 
 		const auto transitions_array = obs_data_array_create();
 		bool selection = false;
-		for (auto row = 2; row < mainLayout->rowCount(); row++) {
+		for (auto row = 3; row < mainLayout->rowCount(); row++) {
 			auto *item = mainLayout->itemAtPosition(row, 4);
 			if (!item)
 				continue;
@@ -923,13 +930,6 @@ void TransitionTableDialog::AddClicked()
 	auto &t = transition_table[canvasName.toUtf8().constData()][fromScene.toUtf8().constData()][toScene.toUtf8().constData()];
 	t.transition = transition.toUtf8().constData();
 	t.duration = durationSpin->value();
-	// Clear from/to filter so all rules remain visible after adding
-	fromCombo->blockSignals(true);
-	toCombo->blockSignals(true);
-	fromCombo->setCurrentIndex(0);
-	toCombo->setCurrentIndex(0);
-	fromCombo->blockSignals(false);
-	toCombo->blockSignals(false);
 	RefreshTable();
 	if (transition_table_enabled) {
 		obs_canvas_t *c = obs_get_canvas_by_name(canvasName.toUtf8().constData());
@@ -946,7 +946,7 @@ void TransitionTableDialog::DeleteClicked()
 	auto canvas_it = transition_table.find(canvasName.toUtf8().constData());
 	if (canvas_it == transition_table.end())
 		return;
-	for (auto row = 2; row < mainLayout->rowCount(); row++) {
+	for (auto row = 3; row < mainLayout->rowCount(); row++) {
 		auto *item = mainLayout->itemAtPosition(row, 4);
 		if (!item)
 			continue;
@@ -977,13 +977,6 @@ void TransitionTableDialog::DeleteClicked()
 			continue;
 		fs_it->second.erase(ts_it);
 	}
-	// Clear from/to filter so remaining rules stay visible after deletion
-	fromCombo->blockSignals(true);
-	toCombo->blockSignals(true);
-	fromCombo->setCurrentIndex(0);
-	toCombo->setCurrentIndex(0);
-	fromCombo->blockSignals(false);
-	toCombo->blockSignals(false);
 	RefreshTable();
 	if (transition_table_enabled) {
 		obs_canvas_t *c = obs_get_canvas_by_name(canvasName.toUtf8().constData());
@@ -999,7 +992,7 @@ void TransitionTableDialog::SelectAllChanged()
 	auto *item = mainLayout->itemAtPosition(0, 4);
 	auto *checkBox = dynamic_cast<QCheckBox *>(item->widget());
 	bool checked = checkBox && checkBox->isChecked();
-	for (auto row = 2; row < mainLayout->rowCount(); row++) {
+	for (auto row = 3; row < mainLayout->rowCount(); row++) {
 		item = mainLayout->itemAtPosition(row, 4);
 		if (!item)
 			continue;
@@ -1013,13 +1006,9 @@ void TransitionTableDialog::SelectAllChanged()
 void TransitionTableDialog::RefreshTable()
 {
 	auto canvasName = canvasCombo->currentText();
-	auto fromScene = fromCombo->currentText();
-	auto toScene = toCombo->currentText();
-	if (fromScene == QString::fromUtf8(obs_module_text("Any")))
-		fromScene = "Any";
-	if (toScene == QString::fromUtf8(obs_module_text("Any")))
-		toScene = "Any";
-	for (auto row = mainLayout->rowCount() - 1; row >= 2; row--) {
+	auto fromScene = fromFilter->text();
+	auto toScene = toFilter->text();
+	for (auto row = mainLayout->rowCount() - 1; row >= 3; row--) {
 		for (auto col = mainLayout->columnCount() - 1; col >= 0; col--) {
 			auto *item = mainLayout->itemAtPosition(row, col);
 			if (item) {
@@ -1035,7 +1024,7 @@ void TransitionTableDialog::RefreshTable()
 
 	int duration = 0;
 	string transition;
-	auto row = 2;
+	auto row = 3;
 	for (const auto &it : canvas_it->second) {
 		if (!fromScene.isEmpty() && !QString::fromUtf8(it.first.c_str()).contains(fromScene, Qt::CaseInsensitive))
 			continue;
@@ -1117,7 +1106,7 @@ void TransitionTableDialog::RefreshTable()
 			row++;
 		}
 	}
-	if (row == 3) {
+	if (row == 4) {
 		if (duration)
 			durationSpin->setValue(duration);
 		if (!transition.empty())
@@ -1136,7 +1125,7 @@ void TransitionTableDialog::mouseDoubleClickEvent(QMouseEvent *event)
 
 	int row, column, row_span, col_span;
 	mainLayout->getItemPosition(index, &row, &column, &row_span, &col_span);
-	if (row < 2)
+	if (row < 3)
 		return;
 	QLayoutItem *item = mainLayout->itemAtPosition(row, 0);
 	if (!item)
@@ -1156,13 +1145,8 @@ void TransitionTableDialog::mouseDoubleClickEvent(QMouseEvent *event)
 	const QString to = label->text();
 	if (to.isEmpty())
 		return;
-	// Populate top-bar controls without triggering the row filter
-	fromCombo->blockSignals(true);
-	toCombo->blockSignals(true);
 	fromCombo->setCurrentText(from);
 	toCombo->setCurrentText(to);
-	fromCombo->blockSignals(false);
-	toCombo->blockSignals(false);
 	// Sync top-bar controls with the clicked row (useful when adding a similar rule)
 	item = mainLayout->itemAtPosition(row, 2);
 	if (item) {
