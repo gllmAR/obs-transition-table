@@ -1121,6 +1121,25 @@ void TransitionTableDialog::mouseDoubleClickEvent(QMouseEvent *event)
 		return;
 	fromCombo->setCurrentText(from);
 	toCombo->setCurrentText(to);
+	// Populate transition and duration so the row can be directly edited
+	item = mainLayout->itemAtPosition(row, 2);
+	if (item) {
+		auto transLabel = dynamic_cast<QLabel *>(item->widget());
+		if (transLabel)
+			transitionCombo->setCurrentText(transLabel->text());
+	}
+	item = mainLayout->itemAtPosition(row, 3);
+	if (item) {
+		auto durLabel = dynamic_cast<QLabel *>(item->widget());
+		if (durLabel) {
+			QString durText = durLabel->text();
+			durText.remove("ms");
+			bool ok;
+			const int dur = durText.toInt(&ok);
+			if (ok && dur >= 50 && dur <= 20000)
+				durationSpin->setValue(dur);
+		}
+	}
 }
 
 void TransitionTableDialog::ShowMatrix()
