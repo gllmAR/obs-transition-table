@@ -923,6 +923,13 @@ void TransitionTableDialog::AddClicked()
 	auto &t = transition_table[canvasName.toUtf8().constData()][fromScene.toUtf8().constData()][toScene.toUtf8().constData()];
 	t.transition = transition.toUtf8().constData();
 	t.duration = durationSpin->value();
+	// Clear from/to filter so all rules remain visible after adding
+	fromCombo->blockSignals(true);
+	toCombo->blockSignals(true);
+	fromCombo->setCurrentIndex(0);
+	toCombo->setCurrentIndex(0);
+	fromCombo->blockSignals(false);
+	toCombo->blockSignals(false);
 	RefreshTable();
 	if (transition_table_enabled) {
 		obs_canvas_t *c = obs_get_canvas_by_name(canvasName.toUtf8().constData());
@@ -970,6 +977,13 @@ void TransitionTableDialog::DeleteClicked()
 			continue;
 		fs_it->second.erase(ts_it);
 	}
+	// Clear from/to filter so remaining rules stay visible after deletion
+	fromCombo->blockSignals(true);
+	toCombo->blockSignals(true);
+	fromCombo->setCurrentIndex(0);
+	toCombo->setCurrentIndex(0);
+	fromCombo->blockSignals(false);
+	toCombo->blockSignals(false);
 	RefreshTable();
 	if (transition_table_enabled) {
 		obs_canvas_t *c = obs_get_canvas_by_name(canvasName.toUtf8().constData());
