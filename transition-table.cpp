@@ -1156,8 +1156,13 @@ void TransitionTableDialog::mouseDoubleClickEvent(QMouseEvent *event)
 	const QString to = label->text();
 	if (to.isEmpty())
 		return;
+	// Populate top-bar controls without triggering the row filter
+	fromCombo->blockSignals(true);
+	toCombo->blockSignals(true);
 	fromCombo->setCurrentText(from);
 	toCombo->setCurrentText(to);
+	fromCombo->blockSignals(false);
+	toCombo->blockSignals(false);
 	// Sync top-bar controls with the clicked row (useful when adding a similar rule)
 	item = mainLayout->itemAtPosition(row, 2);
 	if (item) {
@@ -1223,12 +1228,80 @@ void TransitionTableDialog::ShowMatrix()
 						cellDur = f2->second.duration;
 					}
 				}
-				QString cellText = QString::fromUtf8(t.c_str());
-				if (cellDur > 0)
-					cellText += "\n" + QString::number(cellDur) + "ms";
-				auto *cellLabel = new QLabel(cellText);
-				cellLabel->setAlignment(Qt::AlignCenter);
-				w->setCellWidget(row, column, cellLabel);
+				const string mCanvas = canvasName.toUtf8().constData();
+				const string mFrom = it;
+				const string mTo = it2;
+
+				auto *cellWidget = new QWidget;
+				auto *cellLayout = new QVBoxLayout(cellWidget);
+				cellLayout->setContentsMargins(2, 2, 2, 2);
+				cellLayout->setSpacing(2);
+
+				auto *cellTransCombo = new QComboBox;
+				cellTransCombo->addItem("");
+				auto cellTransIt = canvas_transitions.find(mCanvas);
+				if (cellTransIt != canvas_transitions.end()) {
+					for (const auto &trans : cellTransIt->second)
+						cellTransCombo->addItem(QString::fromUtf8(trans.c_str()));
+				}
+				if (!t.empty())
+					cellTransCombo->setCurrentText(QString::fromUtf8(t.c_str()));
+				cellLayout->addWidget(cellTransCombo);
+
+				auto *cellDurSpin = new QSpinBox;
+				cellDurSpin->setMinimum(50);
+				cellDurSpin->setMaximum(20000);
+				cellDurSpin->setSingleStep(50);
+				cellDurSpin->setSuffix("ms");
+				cellDurSpin->setValue(cellDur > 0 ? cellDur : 300);
+				cellDurSpin->setEnabled(!t.empty());
+				cellLayout->addWidget(cellDurSpin);
+
+				connect(cellTransCombo, &QComboBox::currentTextChanged,
+					[cellDurSpin, mCanvas, mFrom, mTo](const QString &val) {
+						if (val.isEmpty()) {
+							auto ci = transition_table.find(mCanvas);
+							if (ci != transition_table.end()) {
+								auto fi = ci->second.find(mFrom);
+								if (fi != ci->second.end())
+									fi->second.erase(mTo);
+							}
+							cellDurSpin->setEnabled(false);
+						} else {
+							transition_table[mCanvas][mFrom][mTo].transition =
+								val.toUtf8().constData();
+							cellDurSpin->setEnabled(true);
+						}
+						if (!transition_table_enabled)
+							return;
+						obs_canvas_t *c = obs_get_canvas_by_name(mCanvas.c_str());
+						if (c) {
+							set_transition_overrides(c);
+							obs_canvas_release(c);
+						}
+					});
+				connect(cellDurSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+					[mCanvas, mFrom, mTo](int val) {
+						auto ci = transition_table.find(mCanvas);
+						if (ci == transition_table.end())
+							return;
+						auto fi = ci->second.find(mFrom);
+						if (fi == ci->second.end())
+							return;
+						auto ti = fi->second.find(mTo);
+						if (ti == fi->second.end())
+							return;
+						ti->second.duration = val;
+						if (!transition_table_enabled)
+							return;
+						obs_canvas_t *c = obs_get_canvas_by_name(mCanvas.c_str());
+						if (c) {
+							set_transition_overrides(c);
+							obs_canvas_release(c);
+						}
+					});
+
+				w->setCellWidget(row, column, cellWidget);
 				column++;
 			}
 			row++;
@@ -1249,4 +1322,5 @@ void TransitionTableDialog::ShowMatrix()
 	m->addLayout(bottomLayout);
 	md->setLayout(m);
 	md->exec();
+	RefreshTable();
 }
