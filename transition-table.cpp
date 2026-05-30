@@ -668,6 +668,10 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 	toFilter->setPlaceholderText(QString::fromUtf8(obs_module_text("ToScene")));
 	toFilter->setClearButtonEnabled(true);
 	mainLayout->addWidget(toFilter, 1, idx++);
+	auto *filterHint = new QLabel(QString::fromUtf8("🔍"));
+	filterHint->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+	filterHint->setStyleSheet("color: gray;");
+	mainLayout->addWidget(filterHint, 1, idx, 1, 3); // span transition+duration+checkbox cols
 
 	connect(fromFilter, &QLineEdit::textChanged, this, &TransitionTableDialog::RefreshTable);
 	connect(toFilter, &QLineEdit::textChanged, this, &TransitionTableDialog::RefreshTable);
@@ -1247,7 +1251,7 @@ void TransitionTableDialog::ShowMatrix()
 			cellDurSpin->setSingleStep(50);
 			cellDurSpin->setSuffix("ms");
 			cellDurSpin->setValue(existingDur > 0 ? existingDur : durationSpin->value());
-			cellDurSpin->setEnabled(!t.empty());
+			cellDurSpin->setVisible(!t.empty());
 			cellLayout->addWidget(cellDurSpin);
 
 			connect(cellCombo, &QComboBox::currentTextChanged,
@@ -1259,12 +1263,12 @@ void TransitionTableDialog::ShowMatrix()
 							if (fi != ci->second.end())
 								fi->second.erase(mTo);
 						}
-						cellDurSpin->setEnabled(false);
+						cellDurSpin->setVisible(false);
 					} else {
 						auto &info = transition_table[mCanvas][mFrom][mTo];
 						info.transition = val.toUtf8().constData();
 						info.duration = cellDurSpin->value();
-						cellDurSpin->setEnabled(true);
+						cellDurSpin->setVisible(true);
 					}
 					if (!transition_table_enabled)
 						return;
