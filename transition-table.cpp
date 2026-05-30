@@ -4,6 +4,7 @@
 #include "version.h"
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <set>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
@@ -31,7 +32,7 @@ struct transition_info {
 
 map<string, map<string, map<string, transition_info>>> transition_table;
 
-map<string, vector<string>> canvas_transitions;
+map<string, set<string>> canvas_transitions;
 
 int transition_table_width = 0;
 int transition_table_height = 0;
@@ -87,9 +88,10 @@ static void load_transitions(obs_data_t *obj, const char *canvas_name)
 			continue;
 		}
 		string transitionName = obs_data_get_string(transition, "transition");
-		const uint32_t duration = obs_data_get_int(transition, "duration");
-		transition_table[canvasName][fromScene][toScene].transition = transitionName;
-		transition_table[canvasName][fromScene][toScene].duration = duration;
+		const int duration = (int)obs_data_get_int(transition, "duration");
+		auto &entry = transition_table[canvasName][fromScene][toScene];
+		entry.transition = transitionName;
+		entry.duration = duration;
 		obs_data_release(transition);
 	}
 	obs_data_array_release(transitions);
@@ -200,18 +202,7 @@ static void channel_change(void *data, calldata_t *call_data)
 	}
 	if (source && obs_source_get_type(source) == OBS_SOURCE_TYPE_TRANSITION) {
 		string sourceName = obs_source_get_name(source);
-		auto it = canvas_transitions.find(canvasName);
-		bool found = false;
-		if (it != canvas_transitions.end()) {
-			for (auto it2 : it->second) {
-				if (it2 == sourceName) {
-					found = true;
-					break;
-				}
-			}
-		}
-		if (!found)
-			canvas_transitions[canvasName].push_back(sourceName);
+		canvas_transitions[canvasName].insert(sourceName);
 		auto sh = obs_source_get_signal_handler(source);
 		signal_handler_connect(sh, "transition_start", transition_start, canvas);
 	}
@@ -225,6 +216,27 @@ static void source_rename(void *data, calldata_t *call_data)
 	obs_source_t *source = (obs_source_t *)calldata_ptr(call_data, "source");
 	string new_name = calldata_string(call_data, "new_name");
 	string prev_name = calldata_string(call_data, "prev_name");
+
+	// Transition renamed: update canvas_transitions list and all rule values.
+	if (obs_source_get_type(source) == OBS_SOURCE_TYPE_TRANSITION) {
+		for (auto &ct : canvas_transitions) {
+			if (ct.second.count(prev_name)) {
+				ct.second.erase(prev_name);
+				ct.second.insert(new_name);
+			}
+		}
+		for (auto &canvas : transition_table) {
+			for (auto &from : canvas.second) {
+				for (auto &to : from.second) {
+					if (to.second.transition == prev_name)
+						to.second.transition = new_name;
+				}
+			}
+		}
+		return;
+	}
+
+	// Scene renamed: update from-scene and to-scene keys in transition_table.
 	obs_canvas_t *c = obs_source_get_canvas(source);
 	if (!c)
 		return;
@@ -235,14 +247,14 @@ static void source_rename(void *data, calldata_t *call_data)
 		return;
 	auto it2 = it->second.find(prev_name);
 	if (it2 != it->second.end()) {
-		it->second[new_name] = it2->second;
+		it->second[new_name] = std::move(it2->second);
 		it->second.erase(it2);
 	}
-	for (const auto &it2 : it->second) {
-		auto it3 = it2.second.find(prev_name);
-		if (it3 != it2.second.end()) {
-			it->second[it2.first][new_name] = it3->second;
-			it->second[it2.first].erase(it3);
+	for (auto &from : it->second) {
+		auto it3 = from.second.find(prev_name);
+		if (it3 != from.second.end()) {
+			from.second[new_name] = std::move(it3->second);
+			from.second.erase(it3);
 		}
 	}
 }
@@ -481,7 +493,7 @@ bool obs_module_load(void)
 		obs_frontend_get_transitions(&transitions);
 		for (size_t i = 0; i < transitions.sources.num; i++) {
 			string trName = obs_source_get_name(transitions.sources.array[i]);
-			canvas_transitions[canvasName].push_back(trName);
+			canvas_transitions[canvasName].insert(trName);
 		}
 		obs_frontend_source_list_free(&transitions);
 		auto ttd = new TransitionTableDialog((QMainWindow *)obs_frontend_get_main_window());
@@ -1087,6 +1099,7 @@ void TransitionTableDialog::RefreshTable()
 			row++;
 		}
 	}
+	// When exactly one rule exists, pre-fill the add form with its values.
 	if (row == 3) {
 		if (duration)
 			durationSpin->setValue(duration);
@@ -1150,22 +1163,24 @@ void TransitionTableDialog::ShowMatrix()
 	md->setAttribute(Qt::WA_DeleteOnClose);
 	md->setSizeGripEnabled(true);
 
-	std::list<std::string> scenes;
 	auto canvasName = canvasCombo->currentText();
 	auto canvas_it = transition_table.find(canvasName.toUtf8().constData());
+	std::set<std::string> sceneSet;
 	if (canvas_it != transition_table.end()) {
 		for (const auto &it : canvas_it->second) {
 			if (it.first != "Any")
-				scenes.push_back(it.first);
+				sceneSet.insert(it.first);
 			for (const auto &it2 : it.second) {
 				if (it2.first != "Any")
-					scenes.push_back(it2.first);
+					sceneSet.insert(it2.first);
 			}
 		}
 	}
-	scenes.sort();
-	scenes.unique();
-	scenes.push_front("Any");
+	// Build ordered scene list: "Any" first, then remaining scenes alphabetically.
+	std::vector<std::string> scenes;
+	scenes.reserve(sceneSet.size() + 1);
+	scenes.push_back("Any");
+	scenes.insert(scenes.end(), sceneSet.begin(), sceneSet.end());
 	const int s = (int)scenes.size();
 
 	const auto w = new QTableWidget(s, s);
