@@ -15,9 +15,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
-#include <QTableView>
 #include <QTableWidget>
-#include <QtWidgets/QColorDialog>
 #include <QVBoxLayout>
 
 OBS_DECLARE_MODULE()
@@ -84,6 +82,10 @@ static void load_transitions(obs_data_t *obj, const char *canvas_name)
 			canvasName = canvas_name;
 		string fromScene = obs_data_get_string(transition, "from_scene");
 		string toScene = obs_data_get_string(transition, "to_scene");
+		if (fromScene.empty() || toScene.empty()) {
+			obs_data_release(transition);
+			continue;
+		}
 		string transitionName = obs_data_get_string(transition, "transition");
 		const uint32_t duration = obs_data_get_int(transition, "duration");
 		transition_table[canvasName][fromScene][toScene].transition = transitionName;
@@ -250,7 +252,6 @@ static void frontend_save_load(obs_data_t *save_data, bool saving, void *)
 	if (saving) {
 		obs_data_t *obj = obs_data_create();
 		obs_data_array_t *transitions = obs_data_array_create();
-		obs_data_set_obj(save_data, "transition-table", obj);
 		for (const auto &it : transition_table) {
 			for (const auto &it2 : it.second) {
 				for (const auto &it3 : it2.second) {
@@ -502,7 +503,7 @@ bool obs_module_load(void)
 	auto ph = obs_get_proc_handler();
 	proc_handler_add(
 		ph,
-		"void get_transition_table_transition(string from_scene, string to_scene, out string transition, out int duration)",
+		"void get_transition_table_transition(string canvas, string from_scene, string to_scene, out string transition, out int duration)",
 		proc_get_transition, nullptr);
 	return true;
 }
@@ -737,15 +738,12 @@ TransitionTableDialog::TransitionTableDialog(QMainWindow *parent) : QDialog(pare
 	connect(addButton, &QPushButton::clicked, [this]() { AddClicked(); });
 	mainLayout->addWidget(addButton, 1, idx++, Qt::AlignCenter);
 
-	RefreshTable();
-
 	QWidget *controlArea = new QWidget;
 	controlArea->setLayout(mainLayout);
 	controlArea->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
 
 	QVBoxLayout *vlayout = new QVBoxLayout;
 	vlayout->addWidget(controlArea);
-	//vlayout->setAlignment(controlArea, Qt::AlignTop);
 	QWidget *widget = new QWidget;
 	widget->setLayout(vlayout);
 	widget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
@@ -963,6 +961,8 @@ void TransitionTableDialog::DeleteClicked()
 		if (ts_it == fs_it->second.end())
 			continue;
 		fs_it->second.erase(ts_it);
+		if (fs_it->second.empty())
+			canvas_it->second.erase(fs_it);
 	}
 	RefreshTable();
 	if (transition_table_enabled) {

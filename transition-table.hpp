@@ -19,8 +19,6 @@ class TransitionTableDialog : public QDialog {
 	QComboBox *transitionCombo;
 	QSpinBox *durationSpin;
 
-	//struct obs_frontend_source_list scenes = {};
-	//struct obs_frontend_source_list transitions = {};
 	void AddClicked();
 	void DeleteClicked();
 	void SelectAllChanged();
