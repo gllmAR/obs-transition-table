@@ -5,7 +5,6 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QGridLayout>
-#include <QLineEdit>
 #include <QMainWindow>
 #include <QSpinBox>
 
@@ -19,8 +18,6 @@ class TransitionTableDialog : public QDialog {
 	QComboBox *toCombo;
 	QComboBox *transitionCombo;
 	QSpinBox *durationSpin;
-	QLineEdit *fromFilter;
-	QLineEdit *toFilter;
 
 	//struct obs_frontend_source_list scenes = {};
 	//struct obs_frontend_source_list transitions = {};
